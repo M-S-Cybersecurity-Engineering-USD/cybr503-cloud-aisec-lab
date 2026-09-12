@@ -60,28 +60,58 @@ for idx, msg in enumerate(msgs.messages):
 if prompt := st.chat_input(placeholder="Show my recent transactions"):
     st.chat_message("user").write(prompt)
     
-    llm = ChatLiteLLM(
-        model=fetch_model_config(),
-        temperature=0, streaming=True
-    )
-    tools = tools
+    api_key = os.getenv("OPENAI_API_KEY")
+    use_mock = os.getenv("MOCK_LLM", "true").lower() == "true" or not api_key
 
-    chat_agent = ConversationalChatAgent.from_llm_and_tools(llm=llm, tools=tools, verbose=True, system_message=system_msg)
-
-    executor = AgentExecutor.from_agent_and_tools(
-        agent=chat_agent,
-        tools=tools,
-        memory=memory,
-        return_intermediate_steps=True,
-        handle_parsing_errors=True,
-        verbose=True,
-        max_iterations=6
-    )
     with st.chat_message("assistant"):
-        st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
-        response = executor(prompt, callbacks=[st_cb])
-        st.write(response["output"])
-        st.session_state.steps[str(len(msgs.messages) - 1)] = response["intermediate_steps"]
+        executed_live = False
+        if not use_mock and api_key:
+            try:
+                llm = ChatLiteLLM(
+                    model=fetch_model_config(),
+                    temperature=0, streaming=True
+                )
+                chat_agent = ConversationalChatAgent.from_llm_and_tools(llm=llm, tools=tools, verbose=True, system_message=system_msg)
+                executor = AgentExecutor.from_agent_and_tools(
+                    agent=chat_agent,
+                    tools=tools,
+                    memory=memory,
+                    return_intermediate_steps=True,
+                    handle_parsing_errors=True,
+                    verbose=True,
+                    max_iterations=6
+                )
+                st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
+                response = executor(prompt, callbacks=[st_cb])
+                st.write(response["output"])
+                st.session_state.steps[str(len(msgs.messages) - 1)] = response["intermediate_steps"]
+                executed_live = True
+            except Exception as e:
+                st.warning(f"Live LLM provider error: {e}. Switching to ReAct Agent Gateway...")
+                executed_live = False
+
+        if not executed_live:
+            # Query the local agent API gateway which enforces guardrails and simulation
+            import requests
+            try:
+                api_url = "http://localhost:8000/api/chat"
+                res = requests.post(api_url, json={"prompt": prompt}, timeout=10)
+                data = res.json()
+                if data.get("status") == "blocked":
+                    st.error("🛡️ **AI Guardrail Gateway: Request Blocked**")
+                    st.warning(f"**Security Filter:** {data.get('reason')}")
+                    st.info(data.get("response"))
+                else:
+                    with st.status("**ReAct Reasoning & Tool Execution**", state="complete"):
+                        st.write("Evaluating user prompt against system security policy...")
+                        if "action" in prompt.lower() or "union" in prompt.lower():
+                            st.write("Detected tool invocation in user input. Forwarding to execution engine...")
+                        else:
+                            st.write("Identified current authenticated user: MartyMcFly (userId: 1)")
+                            st.write("Calling tool: `GetUserTransactions(userId=1)`")
+                    st.write(data.get("response"))
+            except Exception as e:
+                st.error(f"Error communicating with agent gateway: {e}")
 
 
 display_instructions()

@@ -64,10 +64,22 @@ def execute_agent_logic(prompt: str):
             user_data = get_current_user("")
             return f"ReAct Agent Executed: {action}\nResult: {user_data}"
 
+    # Check for direct SQL injection in prompt (e.g. UNION SELECT)
+    if "union" in prompt_str.lower() and "select" in prompt_str.lower():
+        uid_match = re.search(r'userId\s+(?:is\s+|for\s+|=)?(.*)', prompt_str, re.IGNORECASE)
+        if uid_match:
+            injected_val = uid_match.group(1).strip()
+        else:
+            injected_val = prompt_str
+        raw_result = get_transactions(injected_val)
+        return (f"ReAct Agent Tool Invocation:\n"
+                f"Action: GetUserTransactions('{injected_val}')\n"
+                f"Result: {raw_result}")
+
     # Check for prompt injection with system override
     if "(#system)" in prompt_str and "userId" in prompt_str:
         # Extract overridden userId
-        user_id_override = re.search(r'userId\s*(?:has changed to|=)\s*([0-9a-zA-Z_\'\-\s%]+)', prompt_str)
+        user_id_override = re.search(r'userId\s*(?:has changed to|=|is)\s*(.*)', prompt_str, re.IGNORECASE)
         if user_id_override:
             uid = user_id_override.group(1).strip()
             raw_result = get_transactions(uid)
