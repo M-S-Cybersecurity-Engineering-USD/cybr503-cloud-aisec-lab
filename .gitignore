@@ -1,5 +1,8 @@
 env/
 .env
+.env.*
+!.env.openai.template
+!.env.example
 rate_limit.db
 *.pyc
 transactions.db

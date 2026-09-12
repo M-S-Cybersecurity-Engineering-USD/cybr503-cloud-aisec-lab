@@ -6,6 +6,9 @@ models:
   - model_name: openai-gpt-4o
     model: gpt-4o
 
+  - model_name: openai-gpt-4o-mini
+    model: gpt-4o-mini
+
   - model_name: ollama-mistral-nemo
     model: "ollama/mistral-nemo"
 
